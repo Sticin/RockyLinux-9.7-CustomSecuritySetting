@@ -208,16 +208,26 @@ configure_firewall() {
     log_section_info "Default zone set to $zone"
     echo "${FG_GREEN}${CHECKMARK} Default zone: $zone${RESET}"
     
-    # Open SSH port
+    # --- Функция для применения изменений и показа статуса ---
+    apply_and_show() {
+        firewall-cmd --reload &>/dev/null
+        echo "Current firewall rules after last change:"
+        firewall-cmd --list-all
+        echo ""
+    }
+    
+    # Open SSH port (always)
     firewall-cmd --permanent --add-service=ssh &>/dev/null
     log_section_info "SSH port added to firewall"
     echo "${FG_GREEN}${CHECKMARK} SSH port allowed${RESET}"
+    apply_and_show   # сразу показываем обновлённый статус
     
     echo ""
     if prompt_yes_no "Allow HTTP (port 80)?" "no"; then
         firewall-cmd --permanent --add-service=http &>/dev/null
         echo "${FG_GREEN}${CHECKMARK} HTTP (80) allowed${RESET}"
         log_section_info "HTTP service added"
+        apply_and_show
     fi
     
     echo ""
@@ -225,6 +235,7 @@ configure_firewall() {
         firewall-cmd --permanent --add-service=https &>/dev/null
         echo "${FG_GREEN}${CHECKMARK} HTTPS (443) allowed${RESET}"
         log_section_info "HTTPS service added"
+        apply_and_show
     fi
     
     echo ""
@@ -232,6 +243,7 @@ configure_firewall() {
         firewall-cmd --permanent --add-service=dns &>/dev/null
         echo "${FG_GREEN}${CHECKMARK} DNS (53) allowed${RESET}"
         log_section_info "DNS service added"
+        apply_and_show
     fi
     
     echo ""
@@ -258,6 +270,7 @@ configure_firewall() {
             firewall-cmd --permanent --add-port="$custom_port/$protocol" &>/dev/null
             echo "${FG_GREEN}${CHECKMARK} Port $custom_port/$protocol opened${RESET}"
             log_section_info "Custom port $custom_port/$protocol added"
+            apply_and_show   # показываем статус после добавления порта
             
             if ! prompt_yes_no "Add another port?" "no"; then
                 break
@@ -268,31 +281,37 @@ configure_firewall() {
     echo ""
     if prompt_yes_no "Allow ICMP (ping)?" "yes"; then
         # Don't block ICMP - allows ping
-        :
         echo "${FG_GREEN}${CHECKMARK} ICMP enabled${RESET}"
         log_section_info "ICMP configured"
+        # ICMP блокировка не добавляется, просто показываем статус
+        apply_and_show
     else
         firewall-cmd --permanent --add-icmp-block=echo-request &>/dev/null
         echo "${FG_GREEN}${CHECKMARK} ICMP disabled${RESET}"
+        apply_and_show
     fi
     
-    # Reload firewall
+    # Финальный reload (на всякий случай, хотя apply_and_show уже делал reload)
     firewall-cmd --reload &>/dev/null
     log_section_success "Firewall configuration applied"
-    echo "${FG_GREEN}${CHECKMARK} Firewall rules reloaded${RESET}"
     
     echo ""
-    echo "Current firewall status:"
+    echo "Final firewall status:"
     echo "========================"
+    echo "Active zones:"
     firewall-cmd --get-active-zones
     echo ""
-    echo "Current firewall rules:"
-    echo "========================"
+    echo "Services allowed:"
+    firewall-cmd --list-services
+    echo ""
+    echo "Ports allowed:"
+    firewall-cmd --list-ports
+    echo ""
+    echo "Complete ruleset:"
     firewall-cmd --list-all
     
     read -rp "${FG_GREEN}Press Enter to return...${RESET}"
 }
-
 configure_fail2ban() {
     clear
     draw_header

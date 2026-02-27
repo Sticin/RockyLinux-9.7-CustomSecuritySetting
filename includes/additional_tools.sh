@@ -13,16 +13,35 @@ run_security_scan() {
     
     echo "Starting comprehensive security scan..."
     echo ""
-    
+
     # Run Lynis if available
-    if command -v lynis &>/dev/null; then
-        echo "Running Lynis audit..."
-        echo "======================================"
-        lynis audit system quick 2>&1 | tee -a "$SECTION_LOG_FILE"
+if command -v lynis &>/dev/null; then
+    echo "Running Lynis audit..."
+    echo "======================================"
+    lynis audit system quick 2>&1 | tee -a "$SECTION_LOG_FILE"
+else
+    echo "${FG_YELLOW}Lynis is not installed.${RESET}"
+    read -p "Do you want to install Lynis now? (y/n): " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo "Installing Lynis..."
+        # Install epel-release if not already
+        if ! rpm -q epel-release &>/dev/null; then
+            dnf install -y epel-release
+        fi
+        dnf install -y lynis
+        if command -v lynis &>/dev/null; then
+            echo "Lynis installed successfully. Running audit..."
+            lynis audit system quick 2>&1 | tee -a "$SECTION_LOG_FILE"
+        else
+            echo "${FG_RED}Failed to install Lynis.${RESET}"
+            log_section_warning "Lynis installation failed"
+        fi
     else
-        echo "${FG_YELLOW}Lynis not installed. Install with: dnf install -y epel-release && dnf install -y lynis${RESET}"
-        log_section_warning "Lynis not installed"
+        echo "Skipping Lynis audit."
+        log_section_warning "Lynis not installed (user skipped)"
     fi
+fi
     
     # Check open ports
     echo ""

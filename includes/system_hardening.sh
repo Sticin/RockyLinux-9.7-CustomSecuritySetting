@@ -141,18 +141,17 @@ fs.protected_fifos = 2
 kernel.core_uses_pid = 1
 EOF
     
-    # Apply sysctl settings
-    sysctl -p "$sysctl_config" &>/dev/null
-    log_section_success "Kernel parameters configured"
-    echo "${FG_GREEN}${CHECKMARK} Kernel parameters applied${RESET}"
-    
-    echo ""
-    echo "New kernel parameters:"
-    echo "====================="
-    sysctl -p "$sysctl_config" 2>/dev/null | head -15
-    
-    read -rp "${FG_GREEN}Press Enter to return...${RESET}"
-}
+# Apply sysctl settings
+sysctl -p "$sysctl_config" &>/dev/null
+log_section_success "Kernel parameters configured"
+echo "${FG_GREEN}${CHECKMARK} Kernel parameters applied${RESET}"
+
+echo ""
+echo "New kernel parameters:"
+echo "====================="
+sysctl -p "$sysctl_config" 2>/dev/null
+
+read -rp "${FG_GREEN}Press Enter to return...${RESET}"
 
 configure_filesystem() {
     clear
