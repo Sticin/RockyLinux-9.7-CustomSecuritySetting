@@ -189,29 +189,28 @@ configure_firewall() {
     echo "${FG_CYAN}Firewall Configuration:${RESET}"
     echo "=========================================="
     
-    # Make sure firewalld is installed and running
+    # Убедимся, что firewalld установлен и запущен
     if ! dnf list installed firewalld 2>/dev/null | grep -q "Installed"; then
         echo "Installing firewalld..."
         dnf install -y firewalld &>/dev/null
         log_section_info "Firewalld installed"
     fi
     
-    # Enable and start firewalld
     systemctl enable firewalld &>/dev/null
     systemctl start firewalld &>/dev/null
     log_section_success "Firewalld enabled and started"
     echo "${FG_GREEN}${CHECKMARK} Firewalld enabled${RESET}"
     
-    # Set default zone
+    # Установка зоны по умолчанию
     local zone=$(prompt_with_default "Enter default firewall zone" "public")
     firewall-cmd --set-default-zone="$zone" &>/dev/null
     log_section_info "Default zone set to $zone"
     echo "${FG_GREEN}${CHECKMARK} Default zone: $zone${RESET}"
     
-    # --- Функция для применения изменений и показа статуса ---
+    # Функция для применения изменений и показа статуса
     apply_and_show() {
         echo "Applying firewall rules..."
-        firewall-cmd --reload   # без подавления ошибок – увидим проблемы
+        firewall-cmd --reload
         echo "Current firewall rules:"
         firewall-cmd --list-all
         echo "Currently open ports:"
@@ -219,63 +218,89 @@ configure_firewall() {
         echo ""
     }
     
-    # Open SSH port (always)
-    firewall-cmd --permanent --add-service=ssh   # без подавления ошибок
+    # SSH открываем всегда
+    firewall-cmd --permanent --add-service=ssh
     log_section_info "SSH port added to firewall"
     echo "${FG_GREEN}${CHECKMARK} SSH port allowed${RESET}"
     apply_and_show
     
-    echo ""
-    if prompt_yes_no "Allow HTTP (port 80)?" "no"; then
-        firewall-cmd --permanent --add-service=http
-        echo "${FG_GREEN}${CHECKMARK} HTTP (80) allowed${RESET}"
-        log_section_info "HTTP service added"
-        apply_and_show
-    fi
+    # --- Функция для опроса службы с запросом порта и протокола ---
+    prompt_service_custom() {
+        local service_name="$1"
+        local default_port="$2"
+        
+        if prompt_yes_no "Open $service_name port?" "y"; then
+            local port=$(prompt_with_default "Enter port number (default $default_port)" "$default_port")
+            # Проверка, что port - число
+            if [[ ! "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+                echo "${FG_RED}Invalid port number. Using default $default_port.${RESET}"
+                port=$default_port
+            fi
+            
+            # Запрос протокола с поддержкой both
+            local protocol
+            while true; do
+                read -rp "Protocol (tcp/udp/both) [tcp]: " protocol
+                protocol=${protocol:-tcp}
+                case "${protocol,,}" in
+                    tcp|udp)
+                        firewall-cmd --permanent --add-port="$port/$protocol"
+                        echo "${FG_GREEN}✓ Port $port/$protocol opened (for $service_name)${RESET}"
+                        log_section_info "$service_name port $port/$protocol added"
+                        break
+                        ;;
+                    both)
+                        firewall-cmd --permanent --add-port="$port/tcp"
+                        firewall-cmd --permanent --add-port="$port/udp"
+                        echo "${FG_GREEN}✓ Port $port/tcp and $port/udp opened (for $service_name)${RESET}"
+                        log_section_info "$service_name port $port/tcp+udp added"
+                        break
+                        ;;
+                    *)
+                        echo "${FG_RED}Invalid input. Please enter 'tcp', 'udp', or 'both'.${RESET}"
+                        ;;
+                esac
+            done
+            
+            apply_and_show
+        else
+            echo "Skipping $service_name."
+        fi
+    }
     
     echo ""
-    if prompt_yes_no "Allow HTTPS (port 443)?" "no"; then
-        firewall-cmd --permanent --add-service=https
-        echo "${FG_GREEN}${CHECKMARK} HTTPS (443) allowed${RESET}"
-        log_section_info "HTTPS service added"
-        apply_and_show
-    fi
+    prompt_service_custom "HTTP" 80
     
     echo ""
-    if prompt_yes_no "Allow DNS (port 53)?" "no"; then
-        firewall-cmd --permanent --add-service=dns
-        echo "${FG_GREEN}${CHECKMARK} DNS (53) allowed${RESET}"
-        log_section_info "DNS service added"
-        apply_and_show
-    fi
+    prompt_service_custom "HTTPS" 443
     
     echo ""
+    prompt_service_custom "DNS" 53
+    
+    echo ""
+    # Добавление дополнительных портов
     if prompt_yes_no "Open any additional custom ports?" "no"; then
         while true; do
-            echo "Enter port number (or 'done' to finish):"
+            echo "Enter port number (or press Enter to skip, or 'done' to finish):"
             read -rp "> " custom_port
             if [[ "$custom_port" == "done" ]]; then
                 echo "Finished adding ports."
                 break
             fi
-            # Проверка на пустой ввод
             if [ -z "$custom_port" ]; then
-                echo "${FG_YELLOW}Port number cannot be empty. Please enter a number or 'done'.${RESET}"
-                continue
+                echo "No port entered – skipping."
+                break
             fi
-            # Проверка, что это число в допустимом диапазоне
             if [[ ! "$custom_port" =~ ^[0-9]+$ ]] || [ "$custom_port" -lt 1 ] || [ "$custom_port" -gt 65535 ]; then
                 echo "${FG_RED}Invalid port number. Please enter a number between 1 and 65535.${RESET}"
                 continue
             fi
-            # Предупреждение о привилегированных портах
             if [ "$custom_port" -lt 1024 ]; then
                 echo "${FG_YELLOW}⚠ Port $custom_port is a privileged port (1-1023).${RESET}"
                 if ! prompt_yes_no "Continue anyway?" "no"; then
                     continue
                 fi
             fi
-            # Запрос протокола с дефолтом tcp
             local protocol=""
             while true; do
                 read -rp "Protocol (tcp/udp) [tcp]: " protocol
@@ -287,7 +312,6 @@ configure_firewall() {
                 fi
             done
             
-            # Добавляем порт
             if firewall-cmd --permanent --add-port="$custom_port/$protocol"; then
                 echo "${FG_GREEN}✓ Port $custom_port/$protocol opened.${RESET}"
                 log_section_info "Custom port $custom_port/$protocol added"
@@ -296,7 +320,6 @@ configure_firewall() {
                 echo "${FG_RED}Failed to open port $custom_port/$protocol.${RESET}"
             fi
             
-            # Спрашиваем, добавить ещё
             if ! prompt_yes_no "Add another port?" "no"; then
                 break
             fi
@@ -305,10 +328,8 @@ configure_firewall() {
     
     echo ""
     if prompt_yes_no "Allow ICMP (ping)?" "yes"; then
-        # Don't block ICMP - allows ping
         echo "${FG_GREEN}${CHECKMARK} ICMP enabled${RESET}"
         log_section_info "ICMP configured"
-        # No blocking added, just show status
         apply_and_show
     else
         firewall-cmd --permanent --add-icmp-block=echo-request
@@ -316,7 +337,6 @@ configure_firewall() {
         apply_and_show
     fi
     
-    # Final reload (already done in apply_and_show, but for safety)
     firewall-cmd --reload
     log_section_success "Firewall configuration applied"
     
