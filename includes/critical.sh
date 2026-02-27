@@ -210,21 +210,24 @@ configure_firewall() {
     
     # --- Функция для применения изменений и показа статуса ---
     apply_and_show() {
-        firewall-cmd --reload &>/dev/null
-        echo "Current firewall rules after last change:"
+        echo "Applying firewall rules..."
+        firewall-cmd --reload   # без подавления ошибок – увидим проблемы
+        echo "Current firewall rules:"
         firewall-cmd --list-all
+        echo "Currently open ports:"
+        firewall-cmd --list-ports
         echo ""
     }
     
     # Open SSH port (always)
-    firewall-cmd --permanent --add-service=ssh &>/dev/null
+    firewall-cmd --permanent --add-service=ssh   # без подавления ошибок
     log_section_info "SSH port added to firewall"
     echo "${FG_GREEN}${CHECKMARK} SSH port allowed${RESET}"
-    apply_and_show   # сразу показываем обновлённый статус
+    apply_and_show
     
     echo ""
     if prompt_yes_no "Allow HTTP (port 80)?" "no"; then
-        firewall-cmd --permanent --add-service=http &>/dev/null
+        firewall-cmd --permanent --add-service=http
         echo "${FG_GREEN}${CHECKMARK} HTTP (80) allowed${RESET}"
         log_section_info "HTTP service added"
         apply_and_show
@@ -232,7 +235,7 @@ configure_firewall() {
     
     echo ""
     if prompt_yes_no "Allow HTTPS (port 443)?" "no"; then
-        firewall-cmd --permanent --add-service=https &>/dev/null
+        firewall-cmd --permanent --add-service=https
         echo "${FG_GREEN}${CHECKMARK} HTTPS (443) allowed${RESET}"
         log_section_info "HTTPS service added"
         apply_and_show
@@ -240,7 +243,7 @@ configure_firewall() {
     
     echo ""
     if prompt_yes_no "Allow DNS (port 53)?" "no"; then
-        firewall-cmd --permanent --add-service=dns &>/dev/null
+        firewall-cmd --permanent --add-service=dns
         echo "${FG_GREEN}${CHECKMARK} DNS (53) allowed${RESET}"
         log_section_info "DNS service added"
         apply_and_show
@@ -267,10 +270,10 @@ configure_firewall() {
             fi
             
             local protocol=$(prompt_with_default "Protocol (tcp/udp)" "tcp")
-            firewall-cmd --permanent --add-port="$custom_port/$protocol" &>/dev/null
+            firewall-cmd --permanent --add-port="$custom_port/$protocol"
             echo "${FG_GREEN}${CHECKMARK} Port $custom_port/$protocol opened${RESET}"
             log_section_info "Custom port $custom_port/$protocol added"
-            apply_and_show   # показываем статус после добавления порта
+            apply_and_show
             
             if ! prompt_yes_no "Add another port?" "no"; then
                 break
@@ -283,16 +286,16 @@ configure_firewall() {
         # Don't block ICMP - allows ping
         echo "${FG_GREEN}${CHECKMARK} ICMP enabled${RESET}"
         log_section_info "ICMP configured"
-        # ICMP блокировка не добавляется, просто показываем статус
+        # No blocking added, just show status
         apply_and_show
     else
-        firewall-cmd --permanent --add-icmp-block=echo-request &>/dev/null
+        firewall-cmd --permanent --add-icmp-block=echo-request
         echo "${FG_GREEN}${CHECKMARK} ICMP disabled${RESET}"
         apply_and_show
     fi
     
-    # Финальный reload (на всякий случай, хотя apply_and_show уже делал reload)
-    firewall-cmd --reload &>/dev/null
+    # Final reload (already done in apply_and_show, but for safety)
+    firewall-cmd --reload
     log_section_success "Firewall configuration applied"
     
     echo ""
@@ -312,6 +315,7 @@ configure_firewall() {
     
     read -rp "${FG_GREEN}Press Enter to return...${RESET}"
 }
+
 configure_fail2ban() {
     clear
     draw_header
