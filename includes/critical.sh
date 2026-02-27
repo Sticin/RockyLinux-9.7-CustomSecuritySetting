@@ -252,29 +252,51 @@ configure_firewall() {
     echo ""
     if prompt_yes_no "Open any additional custom ports?" "no"; then
         while true; do
-            local custom_port=$(prompt_with_default "Enter port number (or press Enter to skip)" "")
-            if [ -z "$custom_port" ]; then
+            echo "Enter port number (or 'done' to finish):"
+            read -rp "> " custom_port
+            if [[ "$custom_port" == "done" ]]; then
+                echo "Finished adding ports."
                 break
             fi
-            
-            if [[ ! "$custom_port" =~ ^[0-9]+$ ]] || [ "$custom_port" -lt 1 ] || [ "$custom_port" -gt 65535 ]; then
-                echo "${FG_RED}${CROSSMARK} Invalid port number (1-65535)${RESET}"
+            # Проверка на пустой ввод
+            if [ -z "$custom_port" ]; then
+                echo "${FG_YELLOW}Port number cannot be empty. Please enter a number or 'done'.${RESET}"
                 continue
             fi
-            
+            # Проверка, что это число в допустимом диапазоне
+            if [[ ! "$custom_port" =~ ^[0-9]+$ ]] || [ "$custom_port" -lt 1 ] || [ "$custom_port" -gt 65535 ]; then
+                echo "${FG_RED}Invalid port number. Please enter a number between 1 and 65535.${RESET}"
+                continue
+            fi
+            # Предупреждение о привилегированных портах
             if [ "$custom_port" -lt 1024 ]; then
-                echo "${FG_YELLOW}⚠ Warning: Port $custom_port is a privileged port (1-1023)${RESET}"
+                echo "${FG_YELLOW}⚠ Port $custom_port is a privileged port (1-1023).${RESET}"
                 if ! prompt_yes_no "Continue anyway?" "no"; then
                     continue
                 fi
             fi
+            # Запрос протокола с дефолтом tcp
+            local protocol=""
+            while true; do
+                read -rp "Protocol (tcp/udp) [tcp]: " protocol
+                protocol=${protocol:-tcp}
+                if [[ "$protocol" =~ ^(tcp|udp)$ ]]; then
+                    break
+                else
+                    echo "${FG_RED}Invalid protocol. Please enter 'tcp' or 'udp'.${RESET}"
+                fi
+            done
             
-            local protocol=$(prompt_with_default "Protocol (tcp/udp)" "tcp")
-            firewall-cmd --permanent --add-port="$custom_port/$protocol"
-            echo "${FG_GREEN}${CHECKMARK} Port $custom_port/$protocol opened${RESET}"
-            log_section_info "Custom port $custom_port/$protocol added"
-            apply_and_show
+            # Добавляем порт
+            if firewall-cmd --permanent --add-port="$custom_port/$protocol"; then
+                echo "${FG_GREEN}✓ Port $custom_port/$protocol opened.${RESET}"
+                log_section_info "Custom port $custom_port/$protocol added"
+                apply_and_show
+            else
+                echo "${FG_RED}Failed to open port $custom_port/$protocol.${RESET}"
+            fi
             
+            # Спрашиваем, добавить ещё
             if ! prompt_yes_no "Add another port?" "no"; then
                 break
             fi
